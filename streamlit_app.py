@@ -1,50 +1,41 @@
-import streamlit as st
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import linear_kernel
+import numpy as np
+import streamlit as st
+from sklearn.metrics.pairwise import cosine_similarity
 
 # Загрузка данных
-@st.cache_data
+@st.cache
 def load_data():
-    df = pd.read_csv("tmdb_5000_movies.csv")
-    df = df[['title', 'overview']].dropna()
+    df = pd.read_csv('lastfm_data.csv')  # Замени на свой путь к файлу
     return df
 
-# Построение матрицы TF-IDF и косинусного сходства
-@st.cache_resource
-def create_similarity_matrix(data):
-    tfidf = TfidfVectorizer(stop_words='english')
-    tfidf_matrix = tfidf.fit_transform(data['overview'])
-    cosine_sim = linear_kernel(tfidf_matrix, tfidf_matrix)
-    return cosine_sim
+df = load_data()
 
-# Рекомендательная функция
-def recommend(title, data, cosine_sim):
-    indices = pd.Series(data.index, index=data['title']).drop_duplicates()
-    idx = indices.get(title)
-    if idx is None:
-        return ["Фильм не найден в базе. Попробуйте другой."]
-    
-    sim_scores = list(enumerate(cosine_sim[idx]))
-    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)[1:6]
-    movie_indices = [i[0] for i in sim_scores]
-    return data['title'].iloc[movie_indices].tolist()
+# Предобработка данных
+def preprocess_data(df):
+    # Убедимся, что все песни имеют уникальное имя
+    df = df.dropna(subset=['song'])
+    return df
 
-# Streamlit интерфейс
-def main():
-    st.set_page_config(page_title="🎬 Рекомендательная система фильмов", layout="centered")
-    st.title("🎥 Рекомендательная система фильмов")
-    
-    data = load_data()
-    cosine_sim = create_similarity_matrix(data)
-    
-    selected_movie = st.selectbox("Выберите фильм:", data['title'].sort_values())
-    
-    if st.button("Показать рекомендации"):
-        recommendations = recommend(selected_movie, data, cosine_sim)
-        st.subheader("🎯 Рекомендуемые фильмы:")
-        for i, movie in enumerate(recommendations, 1):
-            st.write(f"{i}. {movie}")
+df = preprocess_data(df)
 
-if __name__ == '__main__':
-    main()
+# Рекомендации на основе похожести песен
+def get_similar_songs(song_name, n=10):
+    song_index = df[df['song'] == song_name].index[0]
+    song_features = df.iloc[:, 2:].values  # Допустим, после второго столбца идут признаки
+    similarity_scores = cosine_similarity([song_features[song_index]], song_features)
+    similar_songs = similarity_scores.argsort()[0][::-1][1:n+1]
+    return df.iloc[similar_songs]['song'].tolist()
+
+# Интерфейс Streamlit
+st.title("🎶 Music Recommendation System")
+
+song_name = st.text_input("Enter a song name:")
+if st.button("Recommend"):
+    if song_name:
+        recommendations = get_similar_songs(song_name)
+        st.write(f"Recommendations based on '{song_name}':")
+        for song in recommendations:
+            st.write(song)
+    else:
+        st.write("Please enter a song name.")
